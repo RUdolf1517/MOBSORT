@@ -19,7 +19,7 @@ use ratatui::{
 
 use crate::{
     algorithm::{AlgorithmEvent, Item, MobilizationSort},
-    anthem::Sequencer,
+    anthem::{Sequencer, ANTHEM_BPM},
     audio::AudioEngine,
     config::{DEFAULT_COUNT, DEFAULT_MAX, DEFAULT_MIN, DEFAULT_VOLUME, FRAME_MILLIS, MAX_ELEMENTS},
     input,
@@ -447,7 +447,7 @@ impl App {
                 AlgorithmEvent::Recruited { wave, item } => {
                     self.highlight_movement(item.id);
                     self.status = format!("Волна {wave}: элемент {} отправлен в отряд", item.value);
-                    let note_duration = self.play_recruitment_note(audio, n);
+                    let note_duration = self.play_recruitment_note(audio);
                     if !note_duration.is_zero() {
                         self.music_wait_until = Some(Instant::now() + note_duration);
                     }
@@ -495,7 +495,7 @@ impl App {
         }
     }
 
-    fn play_recruitment_note(&mut self, audio: Option<&AudioEngine>, n: usize) -> Duration {
+    fn play_recruitment_note(&mut self, audio: Option<&AudioEngine>) -> Duration {
         let note = self.sequencer.next();
         if self.muted {
             return Duration::ZERO;
@@ -504,9 +504,8 @@ impl App {
             return Duration::ZERO;
         };
 
-        let intensity = (1 + n / 80).saturating_mul(self.speed).min(32);
-        let quarter_note_ms = (240 / intensity).clamp(40, 240) as u16;
-        Duration::from_millis(audio.play(note, quarter_note_ms))
+        let sounding_ms = audio.play(note, ANTHEM_BPM);
+        Duration::from_millis(sounding_ms.saturating_add(note.rest_ms(ANTHEM_BPM)))
     }
 
     fn highlight_movement(&mut self, item_id: usize) {

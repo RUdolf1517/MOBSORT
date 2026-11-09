@@ -74,4 +74,24 @@ cargo run --release --no-default-features
 
 ## 7. Зависимости и распространение
 
-Прямые зависимости Cargo: `ratatui`, `crossterm`, `rand`; `cpal` подключается необязательной feature `audio`, включённой по умолчанию. Workflow `.github/workflows/release.yml` формирует релизные сборки для Windows x86_64 и macOS (Intel и Apple Silicon), а также файл SHA-256 контрольных сумм. Формула Homebrew расположена в `Formula/mobilization-sort.rb`.
+Прямые зависимости Cargo: `ratatui`, `crossterm`, `rand`; `cpal` подключается необязательной feature `audio`, включённой по умолчанию. Workflow `.github/workflows/release.yml` формирует релизные сборки для Windows x86_64 и macOS (Intel и Apple Silicon), а также файл SHA-256 контрольных сумм.
+
+## 8. Установка и обновление через Homebrew
+
+Формула `mobilization-sort` размещена в tap `RUdolf1517/MOBSORT` (файл `Formula/mobilization-sort.rb`). Tap привязан к репозиторию и не создаётся заново для каждого релиза. При выпуске новой версии обновляются номер версии и тег исходного кода в той же формуле.
+
+Первичное подключение tap и установка:
+
+```sh
+brew tap RUdolf1517/MOBSORT https://github.com/RUdolf1517/MOBSORT.git
+brew install mobilization-sort
+```
+
+Обновление уже установленной программы:
+
+```sh
+brew update
+brew upgrade rudolf1517/mobsort/mobilization-sort
+```
+
+Перед обновлением Homebrew должен синхронизировать локальную копию tap; иначе команда `brew upgrade` может сообщать о ранее установленном номере версии, даже если новый GitHub Release уже опубликован.
