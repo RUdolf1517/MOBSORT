@@ -1,0 +1,23 @@
+[package]
+name = "mobilization-sort"
+version = "0.1.0"
+edition = "2021"
+description = "A humorous terminal visualizer for Partial Mobilization Sort"
+license = "MIT"
+repository = "https://github.com/RUdolf1517/MOBSORT"
+default-run = "mobilization-sort"
+
+[features]
+default = ["audio"]
+audio = ["dep:cpal"]
+
+[dependencies]
+crossterm = "0.28"
+ratatui = "0.28"
+rand = "0.8"
+cpal = { version = "0.15", optional = true }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
