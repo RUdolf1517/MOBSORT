@@ -60,13 +60,6 @@ pub enum AlgorithmEvent {
     Finished,
 }
 
-impl AlgorithmEvent {
-    /// Musical cues are attached to visible mobilization/return actions, not to UI redraws.
-    pub fn is_musical(self) -> bool {
-        matches!(self, Self::Recruited { .. } | Self::BatchSorted { .. } | Self::Merged { .. })
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
     Ready,

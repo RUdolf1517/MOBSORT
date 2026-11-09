@@ -13,6 +13,11 @@ impl Note {
     pub fn frequency_hz(self) -> f32 {
         440.0 * 2.0_f32.powf((self.midi as f32 - 69.0) / 12.0)
     }
+
+    pub fn duration_ms(self, quarter_note_ms: u16) -> u64 {
+        (u64::from(quarter_note_ms).saturating_mul(u64::from(self.eighths.max(1))) / 2)
+            .clamp(35, 1_500)
+    }
 }
 
 /// Lead melody of the Russian national anthem in E-flat major.

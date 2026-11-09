@@ -100,6 +100,9 @@ struct App {
     speed: usize,
     scroll: usize,
     highlighted: Option<usize>,
+    highlight_until: Option<Instant>,
+    music_wait_until: Option<Instant>,
+    paused_at: Option<Instant>,
     sequencer: Sequencer,
     status: String,
     audio_error: Option<String>,
@@ -116,11 +119,14 @@ impl App {
             algorithm: None,
             original_values: Vec::new(),
             paused: false,
-            muted: false,
+            muted: audio_error.is_some(),
             volume: DEFAULT_VOLUME,
             speed: 1,
             scroll: 0,
             highlighted: None,
+            highlight_until: None,
+            music_wait_until: None,
+            paused_at: None,
             sequencer: Sequencer::default(),
             status: "Выберите источник массива".to_string(),
             audio_error,
@@ -269,6 +275,9 @@ impl App {
         self.paused = false;
         self.scroll = 0;
         self.highlighted = None;
+        self.highlight_until = None;
+        self.music_wait_until = None;
+        self.paused_at = None;
         self.elapsed = Duration::ZERO;
         self.started_at = Some(Instant::now());
         self.sequencer.reset();
@@ -282,6 +291,17 @@ impl App {
                 self.paused = !self.paused;
                 if let Some(audio) = audio {
                     audio.set_paused(self.paused);
+                }
+                if self.paused {
+                    self.paused_at = Some(Instant::now());
+                } else if let Some(paused_at) = self.paused_at.take() {
+                    let paused_for = paused_at.elapsed();
+                    if let Some(deadline) = self.music_wait_until.as_mut() {
+                        *deadline = *deadline + paused_for;
+                    }
+                    if let Some(deadline) = self.highlight_until.as_mut() {
+                        *deadline = *deadline + paused_for;
+                    }
                 }
                 self.status = if self.paused {
                     "Пауза".to_string()
@@ -330,12 +350,15 @@ impl App {
         self.paused = false;
         self.scroll = 0;
         self.highlighted = None;
+        self.highlight_until = None;
+        self.music_wait_until = None;
+        self.paused_at = None;
         self.elapsed = Duration::ZERO;
         self.started_at = Some(Instant::now());
         self.sequencer.reset();
         self.status = "Новая мобилизация".to_string();
         if let Some(audio) = audio {
-            audio.clear_queue();
+            audio.stop();
             audio.set_paused(false);
         }
     }
@@ -345,20 +368,35 @@ impl App {
         self.algorithm = None;
         self.form = None;
         self.paused = false;
+        self.highlighted = None;
+        self.highlight_until = None;
+        self.music_wait_until = None;
+        self.paused_at = None;
         if let Some(audio) = audio {
-            audio.clear_queue();
+            audio.stop();
             audio.set_paused(false);
         }
         self.status = "Выберите источник массива".to_string();
     }
 
     fn toggle_mute(&mut self, audio: Option<&AudioEngine>) {
+        let Some(audio) = audio else {
+            self.muted = true;
+            self.music_wait_until = None;
+            self.status = self
+                .audio_error
+                .as_ref()
+                .map_or_else(|| "Аудиоустройство недоступно".to_string(), |error| {
+                    format!("Аудио недоступно: {error}")
+                });
+            return;
+        };
+
         self.muted = !self.muted;
-        if let Some(audio) = audio {
-            audio.set_muted(self.muted);
-            if self.muted {
-                audio.clear_queue();
-            }
+        audio.set_muted(self.muted);
+        if self.muted {
+            audio.stop();
+            self.music_wait_until = None;
         }
         self.status = if self.muted {
             "Музыка отключена".to_string()
@@ -379,6 +417,14 @@ impl App {
         if self.screen != Screen::Sorting || self.paused {
             return;
         }
+        if self
+            .music_wait_until
+            .is_some_and(|deadline| Instant::now() < deadline)
+        {
+            return;
+        }
+        self.music_wait_until = None;
+
         let Some(n) = self.algorithm.as_ref().map(MobilizationSort::total) else {
             return;
         };
@@ -387,9 +433,6 @@ impl App {
             let Some(event) = self.algorithm.as_mut().map(MobilizationSort::step) else {
                 break;
             };
-            if event.is_musical() {
-                self.play_next_note(audio, n);
-            }
             match event {
                 AlgorithmEvent::WaveStarted {
                     wave,
@@ -402,26 +445,32 @@ impl App {
                     );
                 }
                 AlgorithmEvent::Recruited { wave, item } => {
-                    self.highlighted = Some(item.id);
+                    self.highlight_movement(item.id);
                     self.status = format!("Волна {wave}: элемент {} отправлен в отряд", item.value);
+                    let note_duration = self.play_recruitment_note(audio, n);
+                    if !note_duration.is_zero() {
+                        self.music_wait_until = Some(Instant::now() + note_duration);
+                    }
+                    // One recruitment, one note, one visible red transition.
+                    break;
                 }
                 AlgorithmEvent::BatchMove { wave, item } => {
-                    self.highlighted = Some(item.id);
+                    self.highlight_movement(item.id);
                     self.status = format!("Волна {wave}: сортировка мобилизованного отряда");
                 }
                 AlgorithmEvent::BatchSorted { wave, count } => {
                     self.status = format!("Волна {wave}: отсортирован отряд из {count} элементов");
                 }
                 AlgorithmEvent::Merged { wave, item, .. } => {
-                    self.highlighted = Some(item.id);
+                    self.highlight_movement(item.id);
                     self.status = format!("Волна {wave}: элемент {} возвращён в строй", item.value);
                 }
                 AlgorithmEvent::WaveCompleted { wave, sorted, total } => {
-                    self.highlighted = None;
+                    self.clear_highlight();
                     self.status = format!("Волна {wave} завершена: в отсортированной формации {sorted}/{total}");
                 }
                 AlgorithmEvent::InvariantFailure { wave } => {
-                    self.highlighted = None;
+                    self.clear_highlight();
                     self.elapsed = self
                         .started_at
                         .map_or(Duration::ZERO, |started| started.elapsed());
@@ -430,7 +479,7 @@ impl App {
                     break;
                 }
                 AlgorithmEvent::Finished => {
-                    self.highlighted = None;
+                    self.clear_highlight();
                     self.elapsed = self
                         .started_at
                         .map_or(Duration::ZERO, |started| started.elapsed());
@@ -446,17 +495,36 @@ impl App {
         }
     }
 
-    fn play_next_note(&mut self, audio: Option<&AudioEngine>, n: usize) {
+    fn play_recruitment_note(&mut self, audio: Option<&AudioEngine>, n: usize) -> Duration {
         let note = self.sequencer.next();
         if self.muted {
-            return;
+            return Duration::ZERO;
         }
-        if let Some(audio) = audio {
-            let intensity = (1 + n / 80).min(24);
-            let beat_ms = (180 / intensity).clamp(35, 220) as u16;
-            audio.play(note, beat_ms);
-        }
+        let Some(audio) = audio else {
+            return Duration::ZERO;
+        };
+
+        let intensity = (1 + n / 80).saturating_mul(self.speed).min(32);
+        let quarter_note_ms = (240 / intensity).clamp(40, 240) as u16;
+        Duration::from_millis(audio.play(note, quarter_note_ms))
     }
+
+    fn highlight_movement(&mut self, item_id: usize) {
+        self.highlighted = Some(item_id);
+        self.highlight_until = Some(Instant::now() + Duration::from_millis(100));
+    }
+
+    fn clear_highlight(&mut self) {
+        self.highlighted = None;
+        self.highlight_until = None;
+    }
+
+    fn active_highlight(&self) -> Option<usize> {
+        self.highlight_until
+            .filter(|deadline| Instant::now() < *deadline)
+            .and(self.highlighted)
+    }
+
 }
 
 fn parse_field<T: std::str::FromStr>(field: Option<&Field>, label: &str) -> Result<T, String> {
@@ -650,6 +718,7 @@ fn draw_sorting(frame: &mut Frame<'_>, area: Rect, app: &App) {
         return;
     };
     let stats = algorithm.stats();
+    let active_highlight = app.active_highlight();
     let header = format!(
         "Mobilization Sort  |  собрано: {}/{}  |  осталось в резерве: {}  |  волн: {}  |  скорость x{}",
         algorithm.formation_view().len(),
@@ -683,7 +752,7 @@ fn draw_sorting(frame: &mut Frame<'_>, area: Rect, app: &App) {
         "ОТСОРТИРОВАННАЯ ФОРМАЦИЯ",
         &formation,
         Color::Green,
-        app.highlighted,
+        active_highlight,
         min_value,
         max_value,
         app.scroll,
@@ -694,7 +763,7 @@ fn draw_sorting(frame: &mut Frame<'_>, area: Rect, app: &App) {
         "МОБИЛИЗОВАННЫЙ ОТРЯД",
         &batch,
         Color::Yellow,
-        app.highlighted,
+        active_highlight,
         min_value,
         max_value,
         app.scroll,
@@ -705,7 +774,7 @@ fn draw_sorting(frame: &mut Frame<'_>, area: Rect, app: &App) {
         "РЕЗЕРВ",
         algorithm.reserve_view(),
         Color::Cyan,
-        app.highlighted,
+        active_highlight,
         min_value,
         max_value,
         app.scroll,
@@ -794,4 +863,37 @@ fn value_range(values: &[i64]) -> (i64, i64) {
     values.iter().copied().fold((0, 0), |(min, max), value| {
         (min.min(value), max.max(value))
     })
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::{App, Duration, Instant};
+
+    #[test]
+    fn anthem_sequence_advances_only_on_recruitment() {
+        let mut app = App::new(None);
+        app.start(vec![42]);
+
+        app.advance(None); // WaveStarted
+        assert_eq!(app.sequencer.position(), 0);
+        app.advance(None); // Recruited
+        assert_eq!(app.sequencer.position(), 1);
+
+        for _ in 0..4 {
+            app.advance(None); // BatchSorted, Merged, WaveCompleted, Finished
+            assert_eq!(app.sequencer.position(), 1);
+        }
+    }
+
+    #[test]
+    fn movement_highlight_expires() {
+        let mut app = App::new(None);
+        app.highlighted = Some(7);
+        app.highlight_until = Some(Instant::now() + Duration::from_secs(60));
+        assert_eq!(app.active_highlight(), Some(7));
+
+        app.highlight_until = Some(Instant::now());
+        assert_eq!(app.active_highlight(), None);
+    }
 }
