@@ -60,7 +60,7 @@ cargo run --release --no-default-features
 
 ## Релиз и Homebrew
 
-GitHub Actions workflow `.github/workflows/release.yml` собирает Windows x86_64 `.exe` и архивы macOS для Intel и Apple Silicon. При публикации тега `v*` workflow прикладывает бинарные файлы и `SHA256SUMS.txt` к GitHub Release.
+GitHub Actions workflow `.github/workflows/release.yml` собирает Windows x86_64 `.exe` и архивы macOS для Intel и Apple Silicon. При публикации GitHub Release с тегом `v*` workflow прикладывает бинарные файлы и `SHA256SUMS.txt` к этому релизу.
 
 Формула находится в `Formula/mobilization-sort.rb`. После публикации репозитория с этой формулой добавить его как tap можно так:
 
