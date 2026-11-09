@@ -77,7 +77,7 @@ pub fn draw_lane(
                 " "
             };
             let style = if highlight == Some(item.id) {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(color)
             };
@@ -99,7 +99,7 @@ pub fn draw_lane(
         let label = truncate_to_width(&label, column_width);
         let padding = column_width.saturating_sub(label.chars().count());
         let style = if highlight == Some(item.id) {
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(color)
         };

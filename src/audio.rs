@@ -2,13 +2,10 @@ use crate::anthem::Note;
 
 #[cfg(feature = "audio")]
 mod enabled {
-    use std::{
-        collections::VecDeque,
-        sync::{
-            atomic::{AtomicBool, AtomicU32, Ordering},
-            mpsc::{self, Receiver, Sender},
-            Arc,
-        },
+    use std::sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc::{self, Receiver, Sender},
+        Arc,
     };
 
     use cpal::{
@@ -26,7 +23,7 @@ mod enabled {
 
     enum Message {
         Play(SoundNote),
-        Clear,
+        Stop,
     }
 
     pub struct AudioEngine {
@@ -101,19 +98,19 @@ mod enabled {
             })
         }
 
-        pub fn play(&self, note: Note, beat_ms: u16) {
-            let duration_ms = (u64::from(beat_ms)
-                .saturating_mul(u64::from(note.eighths.max(1)))
-                / 2)
-                .clamp(35, 1_500);
+        /// Starts the note caused by one recruitment move and returns its duration.
+        /// A new event replaces the current tone; notes are never queued for idle playback.
+        pub fn play(&self, note: Note, beat_ms: u16) -> u64 {
+            let duration_ms = note.duration_ms(beat_ms);
             let _ = self.sender.send(Message::Play(SoundNote {
                 frequency: note.frequency_hz(),
                 duration_ms,
             }));
+            duration_ms
         }
 
-        pub fn clear_queue(&self) {
-            let _ = self.sender.send(Message::Clear);
+        pub fn stop(&self) {
+            let _ = self.sender.send(Message::Stop);
         }
 
         pub fn set_muted(&self, muted: bool) {
@@ -132,7 +129,6 @@ mod enabled {
 
     struct Synth {
         receiver: Receiver<Message>,
-        pending: VecDeque<SoundNote>,
         sample_rate: f32,
         channels: usize,
         frequency: f32,
@@ -155,7 +151,6 @@ mod enabled {
         ) -> Self {
             Self {
                 receiver,
-                pending: VecDeque::new(),
                 sample_rate: sample_rate.max(1.0),
                 channels: channels.max(1),
                 frequency: 0.0,
@@ -169,16 +164,27 @@ mod enabled {
         }
 
         fn fill(&mut self, output: &mut [f32]) {
+            // Keep only the most recent command. This is deliberately not a music queue:
+            // each tone is causally tied to an individual recruitment event.
+            let mut latest = None;
             while let Ok(message) = self.receiver.try_recv() {
-                match message {
-                    Message::Play(note) => self.pending.push_back(note),
-                    Message::Clear => {
-                        self.pending.clear();
-                        self.samples_left = 0;
-                        self.note_samples = 0;
-                        self.frequency = 0.0;
-                    }
+                latest = Some(message);
+            }
+            match latest {
+                Some(Message::Play(note)) => {
+                    self.frequency = note.frequency;
+                    self.phase = 0.0;
+                    self.note_samples =
+                        ((note.duration_ms as f32 / 1_000.0) * self.sample_rate).max(1.0) as u64;
+                    self.samples_left = self.note_samples;
                 }
+                Some(Message::Stop) => {
+                    self.frequency = 0.0;
+                    self.phase = 0.0;
+                    self.samples_left = 0;
+                    self.note_samples = 0;
+                }
+                None => {}
             }
 
             if self.paused.load(Ordering::Relaxed) {
@@ -193,17 +199,9 @@ mod enabled {
 
             for frame in output.chunks_mut(self.channels) {
                 if self.samples_left == 0 {
-                    if let Some(note) = self.pending.pop_front() {
-                        self.frequency = note.frequency;
-                        self.note_samples =
-                            ((note.duration_ms as f32 / 1_000.0) * self.sample_rate).max(1.0)
-                                as u64;
-                        self.samples_left = self.note_samples;
-                    } else {
-                        self.frequency = 0.0;
-                        frame.fill(0.0);
-                        continue;
-                    }
+                    self.frequency = 0.0;
+                    frame.fill(0.0);
+                    continue;
                 }
 
                 let elapsed = self.note_samples.saturating_sub(self.samples_left);
@@ -316,12 +314,14 @@ pub struct AudioEngine;
 #[cfg(not(feature = "audio"))]
 impl AudioEngine {
     pub fn new() -> Result<Self, String> {
-        Ok(Self)
+        Err("Аудиоподдержка отключена при сборке".to_string())
     }
 
-    pub fn play(&self, _note: Note, _beat_ms: u16) {}
+    pub fn play(&self, note: Note, beat_ms: u16) -> u64 {
+        note.duration_ms(beat_ms)
+    }
 
-    pub fn clear_queue(&self) {}
+    pub fn stop(&self) {}
 
     pub fn set_muted(&self, _muted: bool) {}
 
