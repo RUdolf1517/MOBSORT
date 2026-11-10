@@ -206,7 +206,7 @@ cargo fmt --all -- --check
 
 ## 8. Установка готовых сборок
 
-[Релиз v0.1.2](https://github.com/RUdolf1517/MOBSORT/releases/tag/v0.1.2)
+[Релиз v0.1.3](https://github.com/RUdolf1517/MOBSORT/releases/tag/v0.1.3)
 содержит следующие артефакты:
 
 - Windows x86_64: `mobilization-sort-windows-x86_64.exe`;

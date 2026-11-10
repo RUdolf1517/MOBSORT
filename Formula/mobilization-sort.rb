@@ -1,8 +1,8 @@
 class MobilizationSort < Formula
   desc "A humorous TUI visualizer for Partial Mobilization Sort"
   homepage "https://github.com/RUdolf1517/MOBSORT"
-  url "https://github.com/RUdolf1517/MOBSORT.git", tag: "v0.1.2"
-  version "0.1.2"
+  url "https://github.com/RUdolf1517/MOBSORT.git", tag: "v0.1.3"
+  version "0.1.3"
   license "MIT"
 
   depends_on "rust" => :build
