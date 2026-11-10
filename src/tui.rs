@@ -99,6 +99,7 @@ struct App {
     volume: u8,
     speed: usize,
     scroll: usize,
+    fit_view: bool,
     highlighted: Option<usize>,
     highlight_until: Option<Instant>,
     music_wait_until: Option<Instant>,
@@ -123,6 +124,7 @@ impl App {
             volume: DEFAULT_VOLUME,
             speed: 1,
             scroll: 0,
+            fit_view: true,
             highlighted: None,
             highlight_until: None,
             music_wait_until: None,
@@ -274,6 +276,7 @@ impl App {
         self.screen = Screen::Sorting;
         self.paused = false;
         self.scroll = 0;
+        self.fit_view = true;
         self.highlighted = None;
         self.highlight_until = None;
         self.music_wait_until = None;
@@ -313,6 +316,14 @@ impl App {
             KeyCode::Char('m') | KeyCode::Char('M') => self.toggle_mute(audio),
             KeyCode::Char('[') => self.change_volume(-5, audio),
             KeyCode::Char(']') => self.change_volume(5, audio),
+            KeyCode::Char('f') | KeyCode::Char('F') => {
+                self.set_fit_view(true);
+                self.status = "Масштаб: весь массив".to_string();
+            }
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                self.set_fit_view(false);
+                self.status = "Детальный масштаб".to_string();
+            }
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.speed = (self.speed + 1).min(20);
                 self.status = format!("Скорость анимации: x{}", self.speed);
@@ -321,10 +332,22 @@ impl App {
                 self.speed = self.speed.saturating_sub(1).max(1);
                 self.status = format!("Скорость анимации: x{}", self.speed);
             }
-            KeyCode::Left => self.scroll = self.scroll.saturating_sub(3),
-            KeyCode::Right => self.scroll = self.scroll.saturating_add(3),
-            KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(12),
-            KeyCode::PageDown => self.scroll = self.scroll.saturating_add(12),
+            KeyCode::Left => {
+                self.enter_detail_view();
+                self.scroll = self.scroll.saturating_sub(3);
+            }
+            KeyCode::Right => {
+                self.enter_detail_view();
+                self.scroll = self.scroll.saturating_add(3);
+            }
+            KeyCode::PageUp => {
+                self.enter_detail_view();
+                self.scroll = self.scroll.saturating_sub(12);
+            }
+            KeyCode::PageDown => {
+                self.enter_detail_view();
+                self.scroll = self.scroll.saturating_add(12);
+            }
             _ => {}
         }
     }
@@ -336,10 +359,24 @@ impl App {
             KeyCode::Char('m') | KeyCode::Char('M') => self.toggle_mute(audio),
             KeyCode::Char('[') => self.change_volume(-5, audio),
             KeyCode::Char(']') => self.change_volume(5, audio),
-            KeyCode::Left => self.scroll = self.scroll.saturating_sub(3),
-            KeyCode::Right => self.scroll = self.scroll.saturating_add(3),
-            KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(12),
-            KeyCode::PageDown => self.scroll = self.scroll.saturating_add(12),
+            KeyCode::Char('f') | KeyCode::Char('F') => self.set_fit_view(true),
+            KeyCode::Char('d') | KeyCode::Char('D') => self.set_fit_view(false),
+            KeyCode::Left => {
+                self.enter_detail_view();
+                self.scroll = self.scroll.saturating_sub(3);
+            }
+            KeyCode::Right => {
+                self.enter_detail_view();
+                self.scroll = self.scroll.saturating_add(3);
+            }
+            KeyCode::PageUp => {
+                self.enter_detail_view();
+                self.scroll = self.scroll.saturating_sub(12);
+            }
+            KeyCode::PageDown => {
+                self.enter_detail_view();
+                self.scroll = self.scroll.saturating_add(12);
+            }
             _ => {}
         }
     }
@@ -349,6 +386,7 @@ impl App {
         self.screen = Screen::Sorting;
         self.paused = false;
         self.scroll = 0;
+        self.fit_view = true;
         self.highlighted = None;
         self.highlight_until = None;
         self.music_wait_until = None;
@@ -403,6 +441,17 @@ impl App {
         } else {
             "Музыка включена".to_string()
         };
+    }
+
+    fn set_fit_view(&mut self, fit_view: bool) {
+        self.fit_view = fit_view;
+        self.scroll = 0;
+    }
+
+    fn enter_detail_view(&mut self) {
+        if self.fit_view {
+            self.set_fit_view(false);
+        }
     }
 
     fn change_volume(&mut self, delta: i16, audio: Option<&AudioEngine>) {
@@ -754,6 +803,7 @@ fn draw_sorting(frame: &mut Frame<'_>, area: Rect, app: &App) {
         active_highlight,
         min_value,
         max_value,
+        app.fit_view,
         app.scroll,
     );
     draw_lane(
@@ -765,6 +815,7 @@ fn draw_sorting(frame: &mut Frame<'_>, area: Rect, app: &App) {
         active_highlight,
         min_value,
         max_value,
+        app.fit_view,
         app.scroll,
     );
     draw_lane(
@@ -776,11 +827,12 @@ fn draw_sorting(frame: &mut Frame<'_>, area: Rect, app: &App) {
         active_highlight,
         min_value,
         max_value,
+        app.fit_view,
         app.scroll,
     );
 
     let footer = format!(
-        "{}  |  Space пауза  R заново  M музыка {}  [/] громкость {}%  +/- скорость  ←/→ прокрутка  Esc меню  Q выход",
+        "{}  |  Space пауза  R заново  M музыка {}  [/] громкость {}%  +/- скорость  F всё  D детали  ←/→ прокрутка  Esc меню  Q выход",
         app.status,
         if app.muted { "выкл." } else { "вкл." },
         app.volume
@@ -849,10 +901,11 @@ fn draw_summary(frame: &mut Frame<'_>, area: Rect, app: &App) {
         None,
         min_value,
         max_value,
+        app.fit_view,
         app.scroll,
     );
     frame.render_widget(
-        Paragraph::new("R повтор • Esc меню • M музыка • ←/→ прокрутка • Q выход")
+        Paragraph::new("R повтор • F весь массив • D детали • ←/→ прокрутка • Esc меню • Q выход")
             .block(Block::default().borders(Borders::ALL)),
         chunks[2],
     );
@@ -868,6 +921,7 @@ fn value_range(values: &[i64]) -> (i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::{App, Duration, Instant};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
     fn anthem_sequence_advances_only_on_recruitment() {
@@ -883,6 +937,44 @@ mod tests {
             app.advance(None); // BatchSorted, Merged, WaveCompleted, Finished
             assert_eq!(app.sequencer.position(), 1);
         }
+    }
+
+    #[test]
+    fn fit_view_resets_detail_scroll_and_detail_keeps_its_position() {
+        let mut app = App::new(None);
+        assert!(app.fit_view);
+
+        app.scroll = 12;
+        app.enter_detail_view();
+        assert!(!app.fit_view);
+        assert_eq!(app.scroll, 0);
+
+        app.scroll = 6;
+        app.enter_detail_view();
+        assert_eq!(app.scroll, 6);
+
+        app.set_fit_view(true);
+        assert!(app.fit_view);
+        assert_eq!(app.scroll, 0);
+    }
+
+    #[test]
+    fn arrow_navigation_enters_detail_mode_and_f_restores_fit_view() {
+        let mut app = App::new(None);
+
+        app.handle_sort_key(
+            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+            None,
+        );
+        assert!(!app.fit_view);
+        assert_eq!(app.scroll, 3);
+
+        app.handle_sort_key(
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
+            None,
+        );
+        assert!(app.fit_view);
+        assert_eq!(app.scroll, 0);
     }
 
     #[test]
