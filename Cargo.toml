@@ -13,11 +13,13 @@ audio = ["dep:cpal"]
 
 [dependencies]
 crossterm = "0.28"
-ratatui = "0.28"
+ratatui = { version = "0.28", default-features = false, features = ["crossterm"] }
 rand = "0.8"
 cpal = { version = "0.15", optional = true }
 
 [profile.release]
+opt-level = "z"
 lto = true
 codegen-units = 1
+panic = "abort"
 strip = true
